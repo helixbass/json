@@ -1416,17 +1416,19 @@ impl<'de, 'a, R: Read<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> {
             b'"' => {
                 self.eat_char();
                 self.scratch.clear();
-                match self.read.parse_str(&mut self.scratch) {
-                    Ok(Reference::Borrowed(s)) => visitor.visit_borrowed_str(s),
-                    Ok(Reference::Copied(s)) => visitor.visit_str(s),
-                    Err(str_err) => {
-                        self.scratch.clear();
-                        match self.read.parse_str_raw(&mut self.scratch) {
-                            Ok(Reference::Borrowed(b)) => visitor.visit_borrowed_bytes(b),
-                            Ok(Reference::Copied(b)) => visitor.visit_bytes(b),
-                            _ => return Err(str_err),
+                match tri!(self.read.parse_str_raw(&mut self.scratch)) {
+                    Reference::Borrowed(b) => {
+                        match std::str::from_utf8(b) {
+                            Ok(s) => visitor.visit_borrowed_str(s),
+                            Err(_) => visitor.visit_borrowed_bytes(b),
                         }
                     }
+                    Reference::Copied(b) => {
+                        match std::str::from_utf8(b) {
+                            Ok(s) => visitor.visit_str(s),
+                            Err(_) => visitor.visit_bytes(b),
+                        }
+                    },
                 }
             }
             b'[' => {
